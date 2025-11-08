@@ -97,20 +97,14 @@
 
 /* サイト名 */
 .smart-url-view-site {
-    font-size: 12px;
-    color: #aab8c2;
-    display: flex;
-    align-items: center;
+    font-size: 13px;
+    color: #657786;
+    margin-top: auto;
 }
 
 .smart-url-view-site::before {
     content: "🔗";
     margin-right: 4px;
-}
-
-/* シンプルカード（画像なし） */
-.smart-url-view-card.smart-url-view-simple .smart-url-view-link {
-    padding: 16px;
 }
 
 /* レスポンシブ対応 */

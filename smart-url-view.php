@@ -18,9 +18,15 @@ if (!defined('ABSPATH')) {
 // OpenGraphクラスを読み込み
 require_once plugin_dir_path(__FILE__) . 'OpenGraph.php';
 
+// ハンドラークラスを読み込み
+require_once plugin_dir_path(__FILE__) . 'includes/class-external-url-handler.php';
+require_once plugin_dir_path(__FILE__) . 'includes/class-internal-url-handler.php';
+
 class SmartUrlView {
     
     private static $instance = null;
+    private $external_handler;
+    private $internal_handler;
     
     /**
      * シングルトンインスタンスを取得
@@ -36,6 +42,13 @@ class SmartUrlView {
      * コンストラクタ
      */
     private function __construct() {
+        // ハンドラーを初期化
+        $this->external_handler = new Smart_URL_View_External_Handler();
+        $this->internal_handler = new Smart_URL_View_Internal_Handler();
+        
+        // WordPressの自動embed機能を無効化（内部リンクのみ）
+        add_filter('embed_oembed_discover', array($this, 'disable_internal_embeds'), 10, 2);
+        
         // コンテンツフィルターを追加
         // wpautop (優先度10) の後に実行するため、優先度を20に設定
         add_filter('the_content', array($this, 'convert_urls_to_cards'), 20);
@@ -291,6 +304,20 @@ class SmartUrlView {
     }
     
     /**
+     * 内部リンクの自動embed機能を無効化
+     */
+    public function disable_internal_embeds($enable, $url) {
+        $site_url = get_site_url();
+        
+        // 内部URLの場合はembedを無効化
+        if (strpos($url, $site_url) === 0) {
+            return false;
+        }
+        
+        return $enable;
+    }
+    
+    /**
      * コンテンツ内のURLをブログカードに変換
      */
     public function convert_urls_to_cards($content) {
@@ -299,19 +326,73 @@ class SmartUrlView {
             return $content;
         }
         
-        // パターン1: <p>タグで囲まれた独立したURL（最も一般的）
+        $site_url = get_site_url();
+        
+        // WordPressの内部embed（blockquote + iframe）からURLを抽出してブログカードに変換
+        $pattern_wp_embed = '/<p>\s*<blockquote class="wp-embedded-content"[^>]*>\s*<a href=["\']([^"\']+)["\'][^>]*>.*?<\/a>\s*<\/blockquote>\s*<iframe class="wp-embedded-content"[^>]*>.*?<\/iframe>\s*<\/p>/is';
+        
+        if (preg_match_all($pattern_wp_embed, $content, $matches_wp_embed)) {
+            foreach ($matches_wp_embed[1] as $i => $url) {
+                // 内部URLかチェック
+                $is_internal = (strpos($url, $site_url) === 0);
+                
+                // URLをブログカードに変換
+                if ($is_internal) {
+                    $card = $this->internal_handler->create_blog_card($url);
+                } else {
+                    $card = $this->external_handler->create_blog_card($url);
+                }
+                
+                // 元のembedをカードで置換
+                $content = str_replace($matches_wp_embed[0][$i], $card, $content);
+            }
+        }
+        
+        // 内部URLを処理（Gutenberg embed block）
+        $pattern_internal_embed = '/<figure class="wp-block-embed[^"]*">\s*<div class="wp-block-embed__wrapper">\s*(' . preg_quote($site_url, '/') . '[^\s<>"]*?)\s*<\/div>\s*<\/figure>/is';
+        $content = preg_replace_callback($pattern_internal_embed, array($this, 'handle_internal_url'), $content);
+        
+        // 外部URLを処理（Gutenberg embed block）
+        $pattern_external_embed = '/<figure class="wp-block-embed[^"]*">\s*<div class="wp-block-embed__wrapper">\s*(https?:\/\/(?!' . preg_quote(parse_url($site_url, PHP_URL_HOST), '/') . ')[^\s<>"]+?)\s*<\/div>\s*<\/figure>/is';
+        $content = preg_replace_callback($pattern_external_embed, array($this, 'handle_external_url'), $content);
+        
+        // パターン1: <p>タグで囲まれた独立したURL
         $pattern1 = '/<p>\s*(<a[^>]+>)?(https?:\/\/[^\s<>"]+?)(<\/a>)?\s*<\/p>/i';
         $content = preg_replace_callback($pattern1, array($this, 'handle_url_in_p_tag'), $content);
         
-        // パターン2: <p>タグ内のリンクタグで囲まれたURL（Gutenbergが自動生成）
+        // パターン2: <p>タグ内のリンクタグで囲まれたURL
         $pattern2 = '/<p>\s*<a[^>]+href=["\']([^"\']+)["\'][^>]*>\1<\/a>\s*<\/p>/i';
         $content = preg_replace_callback($pattern2, array($this, 'handle_link_in_p_tag'), $content);
         
-        // パターン3: 独立した行のURL（念のため）
+        // パターン3: 独立した行のURL
         $pattern3 = '/^[ \t]*(https?:\/\/[^\s<>"]+?)[ \t]*$/m';
         $content = preg_replace_callback($pattern3, array($this, 'create_blog_card'), $content);
         
         return $content;
+    }
+    
+    /**
+     * 内部URLを処理
+     */
+    public function handle_internal_url($matches) {
+        $url = $matches[1];
+        return $this->internal_handler->create_blog_card($url);
+    }
+    
+    /**
+     * 外部URLを処理
+     */
+    public function handle_external_url($matches) {
+        $url = $matches[1];
+        return $this->external_handler->create_blog_card($url);
+    }
+    
+    /**
+     * Gutenbergのembed blockを処理（汎用）
+     */
+    public function handle_gutenberg_embed($matches) {
+        $url = $matches[1];
+        return $this->create_blog_card(array(0 => $matches[0], 1 => $url));
     }
     
     /**
@@ -336,321 +417,17 @@ class SmartUrlView {
     public function create_blog_card($matches) {
         $url = $matches[1];
         
-        // 自サイトのURLは除外
+        // 自サイトのURLかどうかを判定
         $site_url = get_site_url();
-        if (strpos($url, $site_url) === 0) {
-            return $matches[0];
-        }
+        $is_internal = (strpos($url, $site_url) === 0);
         
-        // キャッシュキーを生成
-        $cache_key = 'smart_url_view_' . md5($url);
-        
-        // キャッシュをチェック（24時間）
-        $cached_card = get_transient($cache_key);
-        if ($cached_card !== false) {
-            return $cached_card;
-        }
-        
-        // Open Graphデータを取得
-        try {
-            $graph = OpenGraph::fetch($url);
-            
-            if (!$graph) {
-                return $this->create_simple_card($url);
-            }
-            
-            $title = $graph->title ?: $url;
-            $description = $graph->description ?: '';
-            $image = $graph->image ?: '';
-            $site_name = $graph->site_name ?: parse_url($url, PHP_URL_HOST);
-            
-            // 画像URLを検証・修正
-            $image = $this->validate_image_url($image, $url);
-            
-            // 画像をキャッシュに保存
-            if (!empty($image)) {
-                $cached_image = $this->fetch_and_cache_image($image, $url);
-                if ($cached_image) {
-                    $image = $cached_image;
-                }
-            }
-            
-            $card = $this->render_card($url, $title, $description, $image, $site_name);
-            
-            // キャッシュに保存（24時間）
-            set_transient($cache_key, $card, 24 * HOUR_IN_SECONDS);
-            
-            return $card;
-            
-        } catch (Exception $e) {
-            return $this->create_simple_card($url);
-        }
-    }
-    
-    /**
-     * 外部画像を取得してキャッシュディレクトリに保存
-     */
-    private function fetch_and_cache_image($image_url, $page_url) {
-        // URLのクエリパラメータを削除
-        $image_url_clean = preg_replace('/\?.*$/i', '', $image_url);
-        
-        // キャッシュディレクトリのパス
-        $upload_dir = wp_upload_dir();
-        $cache_dir = $upload_dir['basedir'] . '/smart-url-view/';
-        $cache_url = $upload_dir['baseurl'] . '/smart-url-view/';
-        
-        // ディレクトリが存在しない場合は作成
-        if (!file_exists($cache_dir)) {
-            wp_mkdir_p($cache_dir);
-        }
-        
-        // 画像をダウンロード
-        $response = wp_remote_get($image_url, array(
-            'timeout' => 15,
-            'sslverify' => false,
-            'user-agent' => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-        ));
-        
-        if (is_wp_error($response)) {
-            return null;
-        }
-        
-        $image_data = wp_remote_retrieve_body($response);
-        
-        if (empty($image_data)) {
-            return null;
-        }
-        
-        // Content-TypeヘッダーからMIMEタイプを取得
-        $content_type = wp_remote_retrieve_header($response, 'content-type');
-        
-        // MIMEタイプから正しい拡張子を決定
-        $mime_to_ext = array(
-            'image/jpeg' => 'jpg',
-            'image/jpg' => 'jpg',
-            'image/png' => 'png',
-            'image/gif' => 'gif',
-            'image/webp' => 'webp',
-            'image/svg+xml' => 'svg'
-        );
-        
-        // Content-TypeからベースのMIMEタイプを抽出（charset等を除去）
-        $mime_type = strtok($content_type, ';');
-        $mime_type = trim($mime_type);
-        
-        // MIMEタイプに基づいて拡張子を決定
-        if (isset($mime_to_ext[$mime_type])) {
-            $ext = $mime_to_ext[$mime_type];
+        if ($is_internal) {
+            // 内部URLの場合
+            return $this->internal_handler->create_blog_card($url);
         } else {
-            // MIMEタイプが不明な場合、URLから拡張子を取得
-            $ext = strtolower(pathinfo($image_url_clean, PATHINFO_EXTENSION));
-            $allowed_exts = array('png', 'jpg', 'jpeg', 'gif', 'webp');
-            
-            if (!in_array($ext, $allowed_exts)) {
-                // それでも不明な場合は画像データから判定
-                $finfo = new finfo(FILEINFO_MIME_TYPE);
-                $detected_mime = $finfo->buffer($image_data);
-                
-                if (isset($mime_to_ext[$detected_mime])) {
-                    $ext = $mime_to_ext[$detected_mime];
-                } else {
-                    // 最終手段としてpngを使用
-                    $ext = 'png';
-                }
-            }
+            // 外部URLの場合
+            return $this->external_handler->create_blog_card($url);
         }
-        
-        // キャッシュファイル名（画像URLのMD5ハッシュ）
-        $cache_filename = md5($image_url) . '.' . $ext;
-        $cache_filepath = $cache_dir . $cache_filename;
-        $cache_fileurl = $cache_url . $cache_filename;
-        
-        // すでにキャッシュが存在する場合はそのURLを返す
-        if (file_exists($cache_filepath)) {
-            return $cache_fileurl;
-        }
-        
-        // ファイルシステムに保存
-        global $wp_filesystem;
-        if (empty($wp_filesystem)) {
-            require_once ABSPATH . 'wp-admin/includes/file.php';
-            WP_Filesystem();
-        }
-        
-        // 一時ファイルとして保存
-        $temp_file = $cache_filepath . '.tmp';
-        if (!$wp_filesystem->put_contents($temp_file, $image_data, FS_CHMOD_FILE)) {
-            return null;
-        }
-        
-        // 画像エディタで画像を読み込んでリサイズ
-        $image_editor = wp_get_image_editor($temp_file);
-        
-        if (is_wp_error($image_editor)) {
-            @unlink($temp_file);
-            return null;
-        }
-        
-        // 現在の画像サイズを取得
-        $current_size = $image_editor->get_size();
-        $current_width = $current_size['width'];
-        $current_height = $current_size['height'];
-        
-        // 画像をリサイズ（400x400に収まるように、アスペクト比を維持）
-        // より大きなサイズで保存することで、ボケを防ぐ
-        $max_width = 400;
-        $max_height = 400;
-        
-        // 画像が既に小さい場合はリサイズしない
-        if ($current_width > $max_width || $current_height > $max_height) {
-            $image_editor->resize($max_width, $max_height, false);
-        }
-        
-        // 品質を高く設定して保存（JPEGの場合は90%の品質）
-        $save_args = array(
-            'quality' => 90
-        );
-        
-        $saved = $image_editor->save($cache_filepath, null, $save_args);
-        
-        // 一時ファイルを削除
-        @unlink($temp_file);
-        
-        if (is_wp_error($saved)) {
-            return null;
-        }
-        
-        return $cache_fileurl;
-    }
-    
-    /**
-     * 画像URLを検証・修正
-     */
-    private function validate_image_url($image_url, $page_url) {
-        // 空の場合はそのまま返す
-        if (empty($image_url)) {
-            return '';
-        }
-        
-        // 画像が相対パスまたは無効な場合
-        // 1. //が含まれていない（相対パス）
-        // 2. HTTPSサイトでHTTP画像を使用している
-        if (strpos($image_url, '//') === false || 
-            (is_ssl() && strpos($image_url, 'https:') === false && strpos($image_url, '//') === 0)) {
-            return '';
-        }
-        
-        // プロトコル相対URLの場合、HTTPSに変換
-        if (strpos($image_url, '//') === 0) {
-            $image_url = 'https:' . $image_url;
-        }
-        // HTTPで始まる場合、HTTPSに変換（セキュリティ対策）
-        elseif (strpos($image_url, 'http://') === 0) {
-            $image_url = str_replace('http://', 'https://', $image_url);
-        }
-        // 相対パスの場合、絶対URLに変換
-        elseif (strpos($image_url, '/') === 0) {
-            $parsed_url = parse_url($page_url);
-            $scheme = isset($parsed_url['scheme']) ? $parsed_url['scheme'] : 'https';
-            $host = isset($parsed_url['host']) ? $parsed_url['host'] : '';
-            if ($host) {
-                $image_url = $scheme . '://' . $host . $image_url;
-            } else {
-                return '';
-            }
-        }
-        // 完全な相対パス（http(s)で始まらない）
-        elseif (strpos($image_url, 'http') !== 0) {
-            $parsed_url = parse_url($page_url);
-            $scheme = isset($parsed_url['scheme']) ? $parsed_url['scheme'] : 'https';
-            $host = isset($parsed_url['host']) ? $parsed_url['host'] : '';
-            $path = isset($parsed_url['path']) ? dirname($parsed_url['path']) : '';
-            
-            if ($host) {
-                $base_url = $scheme . '://' . $host . $path;
-                $image_url = rtrim($base_url, '/') . '/' . ltrim($image_url, '/');
-            } else {
-                return '';
-            }
-        }
-        
-        // URLが有効かチェック
-        if (filter_var($image_url, FILTER_VALIDATE_URL) === false) {
-            return '';
-        }
-        
-        // 画像ファイルの拡張子チェック
-        $image_url_without_query = preg_replace('/\?.*$/i', '', $image_url);
-        $allowed_exts = array('png', 'jpg', 'jpeg', 'gif', 'webp', 'svg');
-        $ext = strtolower(pathinfo($image_url_without_query, PATHINFO_EXTENSION));
-        
-        // 拡張子がない、または許可されていない場合は空を返す
-        if (empty($ext) || !in_array($ext, $allowed_exts)) {
-            return '';
-        }
-        
-        return $image_url;
-    }
-    
-    /**
-     * ブログカードをレンダリング
-     */
-    private function render_card($url, $title, $description, $image, $site_name) {
-        // 画像URLが有効かチェック（空文字列でない、かつ有効なURL）
-        $has_valid_image = !empty($image) && filter_var($image, FILTER_VALIDATE_URL) !== false;
-        
-        $card_html = '<div class="smart-url-view-card">';
-        $card_html .= '<a href="' . esc_url($url) . '" target="_blank" rel="noopener noreferrer" class="smart-url-view-link">';
-        
-        // サムネイル画像がある場合（有効な画像URLの場合のみ）
-        if ($has_valid_image) {
-            $card_html .= '<div class="smart-url-view-thumbnail">';
-            $card_html .= '<img src="' . esc_url($image) . '" alt="' . esc_attr($title) . '" loading="lazy" onerror="this.parentElement.style.display=\'none\'">';
-            $card_html .= '</div>';
-        }
-        
-        // テキストコンテンツ
-        $card_html .= '<div class="smart-url-view-content">';
-        $card_html .= '<div class="smart-url-view-title">' . esc_html($title) . '</div>';
-        
-        if (!empty($description)) {
-            // 説明文を150文字に制限
-            $short_description = mb_substr($description, 0, 150);
-            if (mb_strlen($description) > 150) {
-                $short_description .= '...';
-            }
-            $card_html .= '<div class="smart-url-view-description">' . esc_html($short_description) . '</div>';
-        }
-        
-        $card_html .= '<div class="smart-url-view-site">' . esc_html($site_name) . '</div>';
-        $card_html .= '</div>'; // .smart-url-view-content
-        
-        $card_html .= '</a>';
-        $card_html .= '</div>'; // .smart-url-view-card
-        
-        return $card_html;
-    }
-    
-    /**
-     * シンプルなカードを作成（Open Graphデータが取得できない場合）
-     */
-    private function create_simple_card($url) {
-        $host = parse_url($url, PHP_URL_HOST);
-        
-        $card_html = '<div class="smart-url-view-card smart-url-view-simple">';
-        $card_html .= '<a href="' . esc_url($url) . '" target="_blank" rel="noopener noreferrer" class="smart-url-view-link">';
-        $card_html .= '<div class="smart-url-view-content">';
-        $card_html .= '<div class="smart-url-view-title">' . esc_html($url) . '</div>';
-        $card_html .= '<div class="smart-url-view-site">' . esc_html($host) . '</div>';
-        $card_html .= '</div>';
-        $card_html .= '</a>';
-        $card_html .= '</div>';
-        
-        // シンプルカードもキャッシュ（エラーを繰り返さないため）
-        $cache_key = 'smart_url_view_' . md5($url);
-        set_transient($cache_key, $card_html, 24 * HOUR_IN_SECONDS);
-        
-        return $card_html;
     }
 }
 
