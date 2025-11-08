@@ -93,10 +93,14 @@ class SmartUrlView {
             $enable_external = isset($_POST['enable_external_cards']) ? '1' : '0';
             $enable_internal = isset($_POST['enable_internal_cards']) ? '1' : '0';
             $enable_in_blocks = isset($_POST['enable_in_blocks']) ? '1' : '0';
+            $external_blank = isset($_POST['external_blank']) ? '1' : '0';
+            $internal_blank = isset($_POST['internal_blank']) ? '1' : '0';
             
             update_option('smart_url_view_enable_external', $enable_external);
             update_option('smart_url_view_enable_internal', $enable_internal);
             update_option('smart_url_view_enable_in_blocks', $enable_in_blocks);
+            update_option('smart_url_view_external_blank', $external_blank);
+            update_option('smart_url_view_internal_blank', $internal_blank);
             
             add_settings_error(
                 'smart_url_view_messages',
@@ -154,6 +158,8 @@ class SmartUrlView {
         $enable_external = get_option('smart_url_view_enable_external', '1');
         $enable_internal = get_option('smart_url_view_enable_internal', '1');
         $enable_in_blocks = get_option('smart_url_view_enable_in_blocks', '0');
+        $external_blank = get_option('smart_url_view_external_blank', '1');
+        $internal_blank = get_option('smart_url_view_internal_blank', '0');
         
         // キャッシュ情報を取得
         $cache_info = $this->get_cache_info();
@@ -215,6 +221,26 @@ class SmartUrlView {
                                     <strong>※ OFFの場合</strong>: 段落ブロックや独立したURLのみがブログカード表示されます。<br>
                                     <strong>※ ONの場合</strong>: すべてのブロック内のURLがブログカード表示されます（引用、グループ、カラムなど）。
                                 </p>
+                            </td>
+                        </tr>
+                        <tr>
+                            <th scope="row">外部URLを新しいタブで開く</th>
+                            <td>
+                                <label>
+                                    <input type="checkbox" name="external_blank" value="1" <?php checked($external_blank, '1'); ?>>
+                                    外部URLをクリックした時に新しいタブで開く（target="_blank"）
+                                </label>
+                                <p class="description">外部サイトへのリンクを別タブで開きます。デフォルトはON（推奨）。</p>
+                            </td>
+                        </tr>
+                        <tr>
+                            <th scope="row">内部URLを新しいタブで開く</th>
+                            <td>
+                                <label>
+                                    <input type="checkbox" name="internal_blank" value="1" <?php checked($internal_blank, '1'); ?>>
+                                    内部URLをクリックした時に新しいタブで開く（target="_blank"）
+                                </label>
+                                <p class="description">自サイト内のリンクを別タブで開きます。デフォルトはOFF。</p>
                             </td>
                         </tr>
                     </table>

@@ -14,8 +14,11 @@ class Smart_URL_View_External_Handler {
      * ブログカードを作成
      */
     public function create_blog_card($url) {
-        // キャッシュキーを生成
-        $cache_key = 'smart_url_view_external_' . md5($url);
+        // target="_blank"の設定を取得
+        $external_blank = get_option('smart_url_view_external_blank', '1');
+        
+        // キャッシュキーを生成（設定値を含める）
+        $cache_key = 'smart_url_view_external_' . md5($url . '_blank_' . $external_blank);
         
         // キャッシュをチェック（24時間）
         $cached_card = get_transient($cache_key);
@@ -260,8 +263,12 @@ class Smart_URL_View_External_Handler {
         // 画像URLが有効かチェック（空文字列でない、かつ有効なURL）
         $has_valid_image = !empty($image) && filter_var($image, FILTER_VALIDATE_URL) !== false;
         
+        // target="_blank"の設定を確認
+        $external_blank = get_option('smart_url_view_external_blank', '1');
+        $target_attr = ($external_blank === '1') ? ' target="_blank" rel="noopener noreferrer"' : '';
+        
         $card_html = '<div class="smart-url-view-card">';
-        $card_html .= '<a href="' . esc_url($url) . '" target="_blank" rel="noopener noreferrer" class="smart-url-view-link">';
+        $card_html .= '<a href="' . esc_url($url) . '"' . $target_attr . ' class="smart-url-view-link">';
         
         // サムネイル画像がある場合のみ表示
         if ($has_valid_image) {
@@ -298,8 +305,12 @@ class Smart_URL_View_External_Handler {
     private function create_simple_card($url) {
         $host = parse_url($url, PHP_URL_HOST);
         
+        // target="_blank"の設定を確認
+        $external_blank = get_option('smart_url_view_external_blank', '1');
+        $target_attr = ($external_blank === '1') ? ' target="_blank" rel="noopener noreferrer"' : '';
+        
         $card_html = '<div class="smart-url-view-card">';
-        $card_html .= '<a href="' . esc_url($url) . '" target="_blank" rel="noopener noreferrer" class="smart-url-view-link">';
+        $card_html .= '<a href="' . esc_url($url) . '"' . $target_attr . ' class="smart-url-view-link">';
         $card_html .= '<div class="smart-url-view-content">';
         $card_html .= '<div class="smart-url-view-title">' . esc_html($url) . '</div>';
         $card_html .= '<div class="smart-url-view-site">' . esc_html($host) . '</div>';
