@@ -96,11 +96,20 @@ class SmartUrlView {
             $external_blank = isset($_POST['external_blank']) ? '1' : '0';
             $internal_blank = isset($_POST['internal_blank']) ? '1' : '0';
             
+            // キャッシュ時間の設定（時間単位で保存）
+            $cache_duration = isset($_POST['cache_duration']) ? intval($_POST['cache_duration']) : 24;
+            if ($cache_duration < 1) {
+                $cache_duration = 1;
+            } elseif ($cache_duration > 8760) { // 最大1年間（365日）
+                $cache_duration = 8760;
+            }
+            
             update_option('smart_url_view_enable_external', $enable_external);
             update_option('smart_url_view_enable_internal', $enable_internal);
             update_option('smart_url_view_enable_in_blocks', $enable_in_blocks);
             update_option('smart_url_view_external_blank', $external_blank);
             update_option('smart_url_view_internal_blank', $internal_blank);
+            update_option('smart_url_view_cache_duration', $cache_duration);
             
             // リダイレクトして二重送信を防ぐ
             wp_redirect(add_query_arg('settings-updated', 'true', wp_get_referer()));
@@ -145,6 +154,7 @@ class SmartUrlView {
         $enable_in_blocks = get_option('smart_url_view_enable_in_blocks', '0');
         $external_blank = get_option('smart_url_view_external_blank', '1');
         $internal_blank = get_option('smart_url_view_internal_blank', '0');
+        $cache_duration = get_option('smart_url_view_cache_duration', 24);
         
         // キャッシュ情報を取得
         $cache_info = $this->get_cache_info();
@@ -255,6 +265,19 @@ class SmartUrlView {
                                     内部URLをクリックした時に新しいタブで開く（target="_blank"）
                                 </label>
                                 <p class="description">自サイト内のリンクを別タブで開きます。デフォルトはOFF。</p>
+                            </td>
+                        </tr>
+                        <tr>
+                            <th scope="row">キャッシュ保持時間</th>
+                            <td>
+                                <input type="number" name="cache_duration" value="<?php echo esc_attr($cache_duration); ?>" min="1" max="8760" style="width: 100px;">
+                                時間
+                                <p class="description">
+                                    ブログカードの情報をキャッシュする時間を設定します。（1〜8760時間 / 最大1年間）<br>
+                                    短い時間: 最新情報を反映しやすいが、サーバー負荷が高くなります。<br>
+                                    長い時間: サーバー負荷が低くなりますが、情報更新が遅れます。<br>
+                                    デフォルトは24時間（推奨）。参考: 168時間=7日、720時間=30日、8760時間=365日
+                                </p>
                             </td>
                         </tr>
                     </table>

@@ -51,8 +51,9 @@ class Smart_URL_View_Internal_Handler {
         
         $card = $this->render_card($url, $title, $description, $image, $site_name, $post_type_label);
         
-        // キャッシュに保存（24時間）
-        set_transient($cache_key, $card, 24 * HOUR_IN_SECONDS);
+        // キャッシュに保存
+        $cache_duration = get_option('smart_url_view_cache_duration', 24);
+        set_transient($cache_key, $card, $cache_duration * HOUR_IN_SECONDS);
         
         return $card;
     }
