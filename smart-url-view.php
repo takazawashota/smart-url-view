@@ -267,14 +267,6 @@ class SmartUrlView {
         // URLのクエリパラメータを削除
         $image_url_clean = preg_replace('/\?.*$/i', '', $image_url);
         
-        // 拡張子を取得
-        $ext = strtolower(pathinfo($image_url_clean, PATHINFO_EXTENSION));
-        $allowed_exts = array('png', 'jpg', 'jpeg', 'gif', 'webp');
-        
-        if (!in_array($ext, $allowed_exts)) {
-            return null;
-        }
-        
         // キャッシュディレクトリのパス
         $upload_dir = wp_upload_dir();
         $cache_dir = $upload_dir['basedir'] . '/smart-url-view/';
@@ -283,16 +275,6 @@ class SmartUrlView {
         // ディレクトリが存在しない場合は作成
         if (!file_exists($cache_dir)) {
             wp_mkdir_p($cache_dir);
-        }
-        
-        // キャッシュファイル名（画像URLのMD5ハッシュ）
-        $cache_filename = md5($image_url) . '.' . $ext;
-        $cache_filepath = $cache_dir . $cache_filename;
-        $cache_fileurl = $cache_url . $cache_filename;
-        
-        // すでにキャッシュが存在する場合はそのURLを返す
-        if (file_exists($cache_filepath)) {
-            return $cache_fileurl;
         }
         
         // 画像をダウンロード
@@ -310,6 +292,55 @@ class SmartUrlView {
         
         if (empty($image_data)) {
             return null;
+        }
+        
+        // Content-TypeヘッダーからMIMEタイプを取得
+        $content_type = wp_remote_retrieve_header($response, 'content-type');
+        
+        // MIMEタイプから正しい拡張子を決定
+        $mime_to_ext = array(
+            'image/jpeg' => 'jpg',
+            'image/jpg' => 'jpg',
+            'image/png' => 'png',
+            'image/gif' => 'gif',
+            'image/webp' => 'webp',
+            'image/svg+xml' => 'svg'
+        );
+        
+        // Content-TypeからベースのMIMEタイプを抽出（charset等を除去）
+        $mime_type = strtok($content_type, ';');
+        $mime_type = trim($mime_type);
+        
+        // MIMEタイプに基づいて拡張子を決定
+        if (isset($mime_to_ext[$mime_type])) {
+            $ext = $mime_to_ext[$mime_type];
+        } else {
+            // MIMEタイプが不明な場合、URLから拡張子を取得
+            $ext = strtolower(pathinfo($image_url_clean, PATHINFO_EXTENSION));
+            $allowed_exts = array('png', 'jpg', 'jpeg', 'gif', 'webp');
+            
+            if (!in_array($ext, $allowed_exts)) {
+                // それでも不明な場合は画像データから判定
+                $finfo = new finfo(FILEINFO_MIME_TYPE);
+                $detected_mime = $finfo->buffer($image_data);
+                
+                if (isset($mime_to_ext[$detected_mime])) {
+                    $ext = $mime_to_ext[$detected_mime];
+                } else {
+                    // 最終手段としてpngを使用
+                    $ext = 'png';
+                }
+            }
+        }
+        
+        // キャッシュファイル名（画像URLのMD5ハッシュ）
+        $cache_filename = md5($image_url) . '.' . $ext;
+        $cache_filepath = $cache_dir . $cache_filename;
+        $cache_fileurl = $cache_url . $cache_filename;
+        
+        // すでにキャッシュが存在する場合はそのURLを返す
+        if (file_exists($cache_filepath)) {
+            return $cache_fileurl;
         }
         
         // ファイルシステムに保存
