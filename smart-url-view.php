@@ -46,85 +46,223 @@ class SmartUrlView {
         // 管理画面用のスタイル
         add_action('admin_enqueue_scripts', array($this, 'enqueue_styles'));
         
-        // 管理バーにキャッシュ削除ボタンを追加
-        add_action('admin_bar_menu', array($this, 'add_admin_bar_menu'), 100);
+        // 管理画面メニューを追加
+        add_action('admin_menu', array($this, 'add_admin_menu'));
         
-        // キャッシュ削除処理
-        add_action('admin_init', array($this, 'handle_cache_clear'));
-        
-        // 成功メッセージを表示
-        add_action('admin_notices', array($this, 'show_cache_cleared_notice'));
+        // 管理画面での処理
+        add_action('admin_init', array($this, 'handle_admin_actions'));
     }
     
     /**
-     * 管理バーにメニューを追加
+     * 管理画面メニューを追加
      */
-    public function add_admin_bar_menu($wp_admin_bar) {
-        // 管理者のみ表示
-        if (!current_user_can('manage_options')) {
-            return;
-        }
-        
-        $args = array(
-            'id'    => 'smart-url-view-cache',
-            'title' => '<span class="ab-icon dashicons dashicons-update"></span> Smart URL View キャッシュ削除',
-            'href'  => wp_nonce_url(admin_url('?smart_url_view_clear_cache=1'), 'smart_url_view_clear_cache'),
-            'meta'  => array(
-                'title' => 'Smart URL Viewのキャッシュを削除'
-            )
+    public function add_admin_menu() {
+        add_options_page(
+            'Smart URL View 設定',
+            'Smart URL View',
+            'manage_options',
+            'smart-url-view',
+            array($this, 'render_admin_page')
         );
-        $wp_admin_bar->add_node($args);
     }
     
     /**
-     * キャッシュ削除処理
+     * 管理画面での処理
      */
-    public function handle_cache_clear() {
+    public function handle_admin_actions() {
         // 管理者のみ実行可能
         if (!current_user_can('manage_options')) {
             return;
         }
         
-        // ノンスチェック
-        if (!isset($_GET['smart_url_view_clear_cache']) || 
-            !isset($_GET['_wpnonce']) || 
-            !wp_verify_nonce($_GET['_wpnonce'], 'smart_url_view_clear_cache')) {
-            return;
+        // HTMLキャッシュ削除
+        if (isset($_POST['clear_html_cache']) && check_admin_referer('smart_url_view_clear_html_cache')) {
+            $this->clear_html_cache();
+            add_settings_error(
+                'smart_url_view_messages',
+                'smart_url_view_message',
+                'HTMLキャッシュを削除しました。',
+                'updated'
+            );
         }
         
-        // キャッシュ削除実行
-        $this->clear_all_cache();
-        
-        // リファラーを取得（元のページURL）
-        $redirect_url = wp_get_referer();
-        
-        // リファラーがない場合は現在のURLから推測
-        if (!$redirect_url) {
-            $redirect_url = remove_query_arg(array('smart_url_view_clear_cache', '_wpnonce'));
-        } else {
-            // リファラーURLからキャッシュ削除パラメータを削除
-            $redirect_url = remove_query_arg(array('smart_url_view_clear_cache', '_wpnonce'), $redirect_url);
+        // 画像キャッシュ削除
+        if (isset($_POST['clear_image_cache']) && check_admin_referer('smart_url_view_clear_image_cache')) {
+            $this->clear_image_cache();
+            add_settings_error(
+                'smart_url_view_messages',
+                'smart_url_view_message',
+                '画像キャッシュを削除しました。',
+                'updated'
+            );
         }
         
-        // 成功メッセージをクエリパラメータで追加
-        $redirect_url = add_query_arg('smart_url_view_cache_cleared', '1', $redirect_url);
-        
-        // リダイレクト
-        wp_redirect($redirect_url);
-        exit;
+        // 全キャッシュ削除
+        if (isset($_POST['clear_all_cache']) && check_admin_referer('smart_url_view_clear_all_cache')) {
+            $this->clear_html_cache();
+            $this->clear_image_cache();
+            add_settings_error(
+                'smart_url_view_messages',
+                'smart_url_view_message',
+                'すべてのキャッシュを削除しました。',
+                'updated'
+            );
+        }
     }
     
     /**
-     * 全キャッシュを削除
+     * 管理画面ページをレンダリング
      */
-    private function clear_all_cache() {
+    public function render_admin_page() {
+        // 権限チェック
+        if (!current_user_can('manage_options')) {
+            return;
+        }
+        
+        // キャッシュ情報を取得
+        $cache_info = $this->get_cache_info();
+        
+        ?>
+        <div class="wrap">
+            <h1><?php echo esc_html(get_admin_page_title()); ?></h1>
+            
+            <?php settings_errors('smart_url_view_messages'); ?>
+            
+            <style>
+                .smart-url-view-admin-card {
+                    background: #fff;
+                    border: 1px solid #ccd0d4;
+                    box-shadow: 0 1px 1px rgba(0,0,0,.04);
+                    margin: 20px 0;
+                    padding: 20px;
+                }
+                .smart-url-view-admin-card h2 {
+                    margin-top: 0;
+                    padding-top: 0;
+                }
+            </style>
+            
+            <div class="smart-url-view-admin-card">
+                <h2>キャッシュ管理</h2>
+                <p>Smart URL Viewは外部URLの情報と画像をキャッシュして、ページの表示速度を向上させます。</p>
+                
+                <table class="form-table">
+                    <tr>
+                        <th scope="row">HTMLキャッシュ</th>
+                        <td>
+                            <p class="description">
+                                ブログカードのHTML（タイトル、説明文、サイト名など）をキャッシュします。<br>
+                                <strong>件数:</strong> <?php echo esc_html($cache_info['html_count']); ?> 件
+                            </p>
+                            <form method="post" style="margin-top: 10px;">
+                                <?php wp_nonce_field('smart_url_view_clear_html_cache'); ?>
+                                <button type="submit" name="clear_html_cache" class="button">HTMLキャッシュを削除</button>
+                            </form>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th scope="row">画像キャッシュ</th>
+                        <td>
+                            <p class="description">
+                                外部サイトからダウンロードした画像をキャッシュします。<br>
+                                <strong>件数:</strong> <?php echo esc_html($cache_info['image_count']); ?> 件<br>
+                                <strong>サイズ:</strong> <?php echo esc_html($cache_info['image_size']); ?>
+                            </p>
+                            <form method="post" style="margin-top: 10px;">
+                                <?php wp_nonce_field('smart_url_view_clear_image_cache'); ?>
+                                <button type="submit" name="clear_image_cache" class="button">画像キャッシュを削除</button>
+                            </form>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th scope="row">すべてのキャッシュ</th>
+                        <td>
+                            <p class="description">HTMLキャッシュと画像キャッシュの両方を削除します。</p>
+                            <form method="post" style="margin-top: 10px;">
+                                <?php wp_nonce_field('smart_url_view_clear_all_cache'); ?>
+                                <button type="submit" name="clear_all_cache" class="button button-primary" onclick="return confirm('すべてのキャッシュを削除してもよろしいですか？');">すべてのキャッシュを削除</button>
+                            </form>
+                        </td>
+                    </tr>
+                </table>
+            </div>
+            
+            <div class="smart-url-view-admin-card">
+                <h2>プラグインについて</h2>
+                <p>Smart URL Viewは、投稿・固定ページ・カスタム投稿タイプ内の外部URLを自動的にブログカードに変換します。</p>
+                <ul>
+                    <li>Open Graphプロトコルを使用して、リンク先の情報を自動取得</li>
+                    <li>キャッシュ機能により、高速表示を実現</li>
+                    <li>レスポンシブデザイン対応</li>
+                    <li>ダークモード対応</li>
+                </ul>
+            </div>
+        </div>
+        <?php
+    }
+    
+    /**
+     * キャッシュ情報を取得
+     */
+    private function get_cache_info() {
         global $wpdb;
         
-        // トランジェントキャッシュを削除
+        // HTMLキャッシュの件数を取得
+        $html_count = $wpdb->get_var(
+            "SELECT COUNT(*) FROM {$wpdb->options} WHERE option_name LIKE '_transient_smart_url_view_%' AND option_name NOT LIKE '_transient_timeout_%'"
+        );
+        
+        // 画像キャッシュの情報を取得
+        $upload_dir = wp_upload_dir();
+        $cache_dir = $upload_dir['basedir'] . '/smart-url-view/';
+        
+        $image_count = 0;
+        $image_size = 0;
+        
+        if (file_exists($cache_dir)) {
+            $files = glob($cache_dir . '*');
+            if ($files) {
+                $image_count = count($files);
+                foreach ($files as $file) {
+                    if (is_file($file)) {
+                        $image_size += filesize($file);
+                    }
+                }
+            }
+        }
+        
+        // サイズを人間が読みやすい形式に変換
+        $units = array('B', 'KB', 'MB', 'GB');
+        $image_size_readable = $image_size;
+        $unit_index = 0;
+        
+        while ($image_size_readable >= 1024 && $unit_index < count($units) - 1) {
+            $image_size_readable /= 1024;
+            $unit_index++;
+        }
+        
+        $image_size_readable = round($image_size_readable, 2) . ' ' . $units[$unit_index];
+        
+        return array(
+            'html_count' => $html_count,
+            'image_count' => $image_count,
+            'image_size' => $image_size_readable
+        );
+    }
+    
+    /**
+     * HTMLキャッシュを削除
+     */
+    private function clear_html_cache() {
+        global $wpdb;
         $wpdb->query("DELETE FROM {$wpdb->options} WHERE option_name LIKE '_transient_smart_url_view_%'");
         $wpdb->query("DELETE FROM {$wpdb->options} WHERE option_name LIKE '_transient_timeout_smart_url_view_%'");
-        
-        // 画像キャッシュディレクトリを削除
+    }
+    
+    /**
+     * 画像キャッシュを削除
+     */
+    private function clear_image_cache() {
         $upload_dir = wp_upload_dir();
         $cache_dir = $upload_dir['basedir'] . '/smart-url-view/';
         
@@ -137,17 +275,6 @@ class SmartUrlView {
                     }
                 }
             }
-        }
-    }
-    
-    /**
-     * キャッシュ削除後の通知を表示
-     */
-    public function show_cache_cleared_notice() {
-        if (isset($_GET['smart_url_view_cache_cleared']) && $_GET['smart_url_view_cache_cleared'] == '1') {
-            echo '<div class="notice notice-success is-dismissible">';
-            echo '<p><strong>Smart URL View:</strong> キャッシュを削除しました。</p>';
-            echo '</div>';
         }
     }
     
@@ -545,27 +672,12 @@ register_activation_hook(__FILE__, 'smart_url_view_activate');
  * プラグイン無効化時の処理
  */
 function smart_url_view_deactivate() {
-    // キャッシュをクリア
+    // HTMLキャッシュのみクリア（画像キャッシュは残す）
     global $wpdb;
     $wpdb->query("DELETE FROM {$wpdb->options} WHERE option_name LIKE '_transient_smart_url_view_%'");
     $wpdb->query("DELETE FROM {$wpdb->options} WHERE option_name LIKE '_transient_timeout_smart_url_view_%'");
     
-    // 画像キャッシュディレクトリを削除
-    $upload_dir = wp_upload_dir();
-    $cache_dir = $upload_dir['basedir'] . '/smart-url-view/';
-    
-    if (file_exists($cache_dir)) {
-        // ディレクトリ内のファイルを削除
-        $files = glob($cache_dir . '*');
-        if ($files) {
-            foreach ($files as $file) {
-                if (is_file($file)) {
-                    @unlink($file);
-                }
-            }
-        }
-        // ディレクトリを削除
-        @rmdir($cache_dir);
-    }
+    // 注意: 画像キャッシュは削除しません
+    // 画像キャッシュを削除したい場合は、管理画面から手動で削除してください
 }
 register_deactivation_hook(__FILE__, 'smart_url_view_deactivate');
