@@ -1,11 +1,11 @@
 <?php
 /**
  * Plugin Name: Smart URL View
- * Plugin URI: https://example.com/smart-url-view
+ * Plugin URI: https://sokulabo.com/products/smart-url-view/
  * Description: 投稿・固定ページ・カスタム投稿タイプ内の外部URLを自動的にブログカードに変換するプラグイン
  * Version: 1.0.0
  * Author: Shota Takazawa
- * Author URI: https://example.com
+ * Author URI: https://sokulabo.com/products/
  * License: GPL2
  * Text Domain: smart-url-view
  */
