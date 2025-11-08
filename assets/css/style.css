@@ -37,6 +37,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
+    min-height: 120px;
 }
 
 .smart-url-view-thumbnail img {
@@ -44,6 +45,15 @@
     height: 100%;
     object-fit: cover;
     display: block;
+    image-rendering: -webkit-optimize-contrast;
+    image-rendering: crisp-edges;
+}
+
+/* 画像読み込みエラー時は非表示 */
+.smart-url-view-thumbnail:empty,
+.smart-url-view-thumbnail img[src=""],
+.smart-url-view-thumbnail img:not([src]) {
+    display: none;
 }
 
 /* コンテンツエリア */
