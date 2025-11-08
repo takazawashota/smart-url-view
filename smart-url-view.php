@@ -306,7 +306,12 @@ class SmartUrlView {
     /**
      * 内部リンクの自動embed機能を無効化
      */
-    public function disable_internal_embeds($enable, $url) {
+    public function disable_internal_embeds($enable, $url = null) {
+        // URLが渡されない場合は、すべての内部embedを無効化
+        if ($url === null) {
+            return false;
+        }
+        
         $site_url = get_site_url();
         
         // 内部URLの場合はembedを無効化
