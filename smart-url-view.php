@@ -102,46 +102,31 @@ class SmartUrlView {
             update_option('smart_url_view_external_blank', $external_blank);
             update_option('smart_url_view_internal_blank', $internal_blank);
             
-            add_settings_error(
-                'smart_url_view_messages',
-                'smart_url_view_message',
-                '設定を保存しました。',
-                'updated'
-            );
+            // リダイレクトして二重送信を防ぐ
+            wp_redirect(add_query_arg('settings-updated', 'true', wp_get_referer()));
+            exit;
         }
         
         // HTMLキャッシュ削除
         if (isset($_POST['clear_html_cache']) && check_admin_referer('smart_url_view_clear_html_cache')) {
             $this->clear_html_cache();
-            add_settings_error(
-                'smart_url_view_messages',
-                'smart_url_view_message',
-                'HTMLキャッシュを削除しました。',
-                'updated'
-            );
+            wp_redirect(add_query_arg('cache-cleared', 'html', wp_get_referer()));
+            exit;
         }
         
         // 画像キャッシュ削除
         if (isset($_POST['clear_image_cache']) && check_admin_referer('smart_url_view_clear_image_cache')) {
             $this->clear_image_cache();
-            add_settings_error(
-                'smart_url_view_messages',
-                'smart_url_view_message',
-                '画像キャッシュを削除しました。',
-                'updated'
-            );
+            wp_redirect(add_query_arg('cache-cleared', 'image', wp_get_referer()));
+            exit;
         }
         
         // 全キャッシュ削除
         if (isset($_POST['clear_all_cache']) && check_admin_referer('smart_url_view_clear_all_cache')) {
             $this->clear_html_cache();
             $this->clear_image_cache();
-            add_settings_error(
-                'smart_url_view_messages',
-                'smart_url_view_message',
-                'すべてのキャッシュを削除しました。',
-                'updated'
-            );
+            wp_redirect(add_query_arg('cache-cleared', 'all', wp_get_referer()));
+            exit;
         }
     }
     
@@ -168,7 +153,36 @@ class SmartUrlView {
         <div class="wrap">
             <h1><?php echo esc_html(get_admin_page_title()); ?></h1>
             
-            <?php settings_errors('smart_url_view_messages'); ?>
+            <?php
+            // リダイレクト後の成功メッセージ
+            if (isset($_GET['settings-updated']) && $_GET['settings-updated'] === 'true') {
+                ?>
+                <div class="notice notice-success is-dismissible">
+                    <p>設定を保存しました。</p>
+                </div>
+                <?php
+            }
+            
+            // キャッシュ削除後のメッセージ
+            if (isset($_GET['cache-cleared'])) {
+                $cache_type = $_GET['cache-cleared'];
+                $messages = array(
+                    'html' => 'HTMLキャッシュを削除しました。',
+                    'image' => '画像キャッシュを削除しました。',
+                    'all' => 'すべてのキャッシュを削除しました。'
+                );
+                
+                if (isset($messages[$cache_type])) {
+                    ?>
+                    <div class="notice notice-success is-dismissible">
+                        <p><?php echo esc_html($messages[$cache_type]); ?></p>
+                    </div>
+                    <?php
+                }
+            }
+            
+            settings_errors('smart_url_view_messages');
+            ?>
             
             <style>
                 .smart-url-view-admin-card {
