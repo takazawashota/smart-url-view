@@ -296,9 +296,12 @@ class SmartUrlView {
                         <th scope="row">HTMLキャッシュ</th>
                         <td>
                             <p class="description">
-                                ブログカードのHTML（タイトル、説明文、サイト名など）をキャッシュします。<br>
-                                <strong>件数:</strong> <?php echo esc_html($cache_info['html_count']); ?> 件
+                                ブログカードのHTML（タイトル、説明文、サイト名など）をキャッシュします。
                             </p>
+                            <div style="display: inline-block; background: #f0f0f1; padding: 8px 12px; border-radius: 4px; margin-top: 8px;">
+                                <span style="color: #2271b1; font-weight: 600; font-size: 14px;"><?php echo esc_html($cache_info['html_count']); ?></span>
+                                <span style="color: #646970; font-size: 13px; margin-left: 4px;">件</span>
+                            </div>
                             <form method="post" style="margin-top: 10px;">
                                 <?php wp_nonce_field('smart_url_view_clear_html_cache'); ?>
                                 <button type="submit" name="clear_html_cache" class="button">HTMLキャッシュを削除</button>
@@ -309,10 +312,15 @@ class SmartUrlView {
                         <th scope="row">画像キャッシュ</th>
                         <td>
                             <p class="description">
-                                外部サイトからダウンロードした画像をキャッシュします。<br>
-                                <strong>件数:</strong> <?php echo esc_html($cache_info['image_count']); ?> 件<br>
-                                <strong>サイズ:</strong> <?php echo esc_html($cache_info['image_size']); ?>
+                                外部サイトからダウンロードした画像をキャッシュします。
                             </p>
+                            <div style="display: inline-block; background: #f0f0f1; padding: 8px 12px; border-radius: 4px; margin-top: 8px; margin-right: 8px;">
+                                <span style="color: #2271b1; font-weight: 600; font-size: 14px;"><?php echo esc_html($cache_info['image_count']); ?></span>
+                                <span style="color: #646970; font-size: 13px; margin-left: 4px;">件</span>
+                            </div>
+                            <div style="display: inline-block; background: #f0f0f1; padding: 8px 12px; border-radius: 4px; margin-top: 8px;">
+                                <span style="color: #2271b1; font-weight: 600; font-size: 14px;"><?php echo esc_html($cache_info['image_size']); ?></span>
+                            </div>
                             <form method="post" style="margin-top: 10px;">
                                 <?php wp_nonce_field('smart_url_view_clear_image_cache'); ?>
                                 <button type="submit" name="clear_image_cache" class="button">画像キャッシュを削除</button>
@@ -335,12 +343,25 @@ class SmartUrlView {
             <div class="smart-url-view-admin-card">
                 <h2>プラグインについて</h2>
                 <p>Smart URL Viewは、投稿・固定ページ・カスタム投稿タイプ内の外部URLを自動的にブログカードに変換します。</p>
-                <ul>
-                    <li>Open Graphプロトコルを使用して、リンク先の情報を自動取得</li>
-                    <li>キャッシュ機能により、高速表示を実現</li>
-                    <li>レスポンシブデザイン対応</li>
-                    <li>ダークモード対応</li>
+                <ul style="list-style: none; padding-left: 0; margin: 20px 0;">
+                    <li style="padding: 0 0 0 24px; position: relative; color: #555;">
+                        <span style="position: absolute; left: 0; color: #2271b1;">✓</span>
+                        Open Graphプロトコルを使用して、リンク先の情報を自動取得
+                    </li>
+                    <li style="padding: 0 0 0 24px; position: relative; color: #555;">
+                        <span style="position: absolute; left: 0; color: #2271b1;">✓</span>
+                        キャッシュ機能により、高速表示を実現
+                    </li>
+                    <li style="padding: 0 0 0 24px; position: relative; color: #555;">
+                        <span style="position: absolute; left: 0; color: #2271b1;">✓</span>
+                        レスポンシブデザイン対応
+                    </li>
+                    <li style="padding: 0 0 0 24px; position: relative; color: #555;">
+                        <span style="position: absolute; left: 0; color: #2271b1;">✓</span>
+                        ダークモード対応
+                    </li>
                 </ul>
+                <p>このプラグインのマニュアルは <a href="https://sokulabo.com/products/smart-url-view/" target="_blank" rel="noopener noreferrer">こちら</a> からご覧いただけます。</p>
             </div>
         </div>
         <?php
