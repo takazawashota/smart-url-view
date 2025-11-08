@@ -88,6 +88,24 @@ class SmartUrlView {
             return;
         }
         
+        // 設定の保存
+        if (isset($_POST['save_settings']) && check_admin_referer('smart_url_view_save_settings')) {
+            $enable_external = isset($_POST['enable_external_cards']) ? '1' : '0';
+            $enable_internal = isset($_POST['enable_internal_cards']) ? '1' : '0';
+            $enable_in_blocks = isset($_POST['enable_in_blocks']) ? '1' : '0';
+            
+            update_option('smart_url_view_enable_external', $enable_external);
+            update_option('smart_url_view_enable_internal', $enable_internal);
+            update_option('smart_url_view_enable_in_blocks', $enable_in_blocks);
+            
+            add_settings_error(
+                'smart_url_view_messages',
+                'smart_url_view_message',
+                '設定を保存しました。',
+                'updated'
+            );
+        }
+        
         // HTMLキャッシュ削除
         if (isset($_POST['clear_html_cache']) && check_admin_referer('smart_url_view_clear_html_cache')) {
             $this->clear_html_cache();
@@ -132,6 +150,11 @@ class SmartUrlView {
             return;
         }
         
+        // 現在の設定を取得
+        $enable_external = get_option('smart_url_view_enable_external', '1');
+        $enable_internal = get_option('smart_url_view_enable_internal', '1');
+        $enable_in_blocks = get_option('smart_url_view_enable_in_blocks', '0');
+        
         // キャッシュ情報を取得
         $cache_info = $this->get_cache_info();
         
@@ -154,6 +177,52 @@ class SmartUrlView {
                     padding-top: 0;
                 }
             </style>
+            
+            <div class="smart-url-view-admin-card">
+                <h2>ブログカード設定</h2>
+                <form method="post">
+                    <?php wp_nonce_field('smart_url_view_save_settings'); ?>
+                    <table class="form-table">
+                        <tr>
+                            <th scope="row">外部URLのブログカード</th>
+                            <td>
+                                <label>
+                                    <input type="checkbox" name="enable_external_cards" value="1" <?php checked($enable_external, '1'); ?>>
+                                    外部URLをブログカード表示する
+                                </label>
+                                <p class="description">外部サイトへのリンクをブログカード形式で表示します。</p>
+                            </td>
+                        </tr>
+                        <tr>
+                            <th scope="row">内部URLのブログカード</th>
+                            <td>
+                                <label>
+                                    <input type="checkbox" name="enable_internal_cards" value="1" <?php checked($enable_internal, '1'); ?>>
+                                    内部URLをブログカード表示する
+                                </label>
+                                <p class="description">自サイト内のリンクをブログカード形式で表示します。</p>
+                            </td>
+                        </tr>
+                        <tr>
+                            <th scope="row">他のブロック内のURL</th>
+                            <td>
+                                <label>
+                                    <input type="checkbox" name="enable_in_blocks" value="1" <?php checked($enable_in_blocks, '1'); ?>>
+                                    他のブロック内のURLもブログカード表示する
+                                </label>
+                                <p class="description">
+                                    引用ブロック、テーマ独自の装飾ブロックなど、他のブロック内に含まれるURLもブログカード表示します。<br>
+                                    <strong>※ OFFの場合</strong>: 段落ブロックや独立したURLのみがブログカード表示されます。<br>
+                                    <strong>※ ONの場合</strong>: すべてのブロック内のURLがブログカード表示されます（引用、グループ、カラムなど）。
+                                </p>
+                            </td>
+                        </tr>
+                    </table>
+                    <p class="submit">
+                        <button type="submit" name="save_settings" class="button button-primary">設定を保存</button>
+                    </p>
+                </form>
+            </div>
             
             <div class="smart-url-view-admin-card">
                 <h2>キャッシュ管理</h2>
@@ -341,10 +410,18 @@ class SmartUrlView {
                 // 内部URLかチェック
                 $is_internal = (strpos($url, $site_url) === 0);
                 
-                // URLをブログカードに変換
+                // 設定を確認してスキップ
                 if ($is_internal) {
+                    $enable_internal = get_option('smart_url_view_enable_internal', '1');
+                    if ($enable_internal !== '1') {
+                        continue; // このURLはスキップ
+                    }
                     $card = $this->internal_handler->create_blog_card($url);
                 } else {
+                    $enable_external = get_option('smart_url_view_enable_external', '1');
+                    if ($enable_external !== '1') {
+                        continue; // このURLはスキップ
+                    }
                     $card = $this->external_handler->create_blog_card($url);
                 }
                 
@@ -361,13 +438,46 @@ class SmartUrlView {
         $pattern_external_embed = '/<figure class="wp-block-embed[^"]*">\s*<div class="wp-block-embed__wrapper">\s*(https?:\/\/(?!' . preg_quote(parse_url($site_url, PHP_URL_HOST), '/') . ')[^\s<>"]+?)\s*<\/div>\s*<\/figure>/is';
         $content = preg_replace_callback($pattern_external_embed, array($this, 'handle_external_url'), $content);
         
-        // パターン1: <p>タグで囲まれた独立したURL
-        $pattern1 = '/<p>\s*(<a[^>]+>)?(https?:\/\/[^\s<>"]+?)(<\/a>)?\s*<\/p>/i';
-        $content = preg_replace_callback($pattern1, array($this, 'handle_url_in_p_tag'), $content);
+        // 他のブロック内のURLを処理するかどうかの設定を確認
+        $enable_in_blocks = get_option('smart_url_view_enable_in_blocks', '0');
         
-        // パターン2: <p>タグ内のリンクタグで囲まれたURL
-        $pattern2 = '/<p>\s*<a[^>]+href=["\']([^"\']+)["\'][^>]*>\1<\/a>\s*<\/p>/i';
-        $content = preg_replace_callback($pattern2, array($this, 'handle_link_in_p_tag'), $content);
+        if ($enable_in_blocks === '1') {
+            // 設定がONの場合: すべての<p>タグ内のURLを処理
+            
+            // パターン1: <p>タグで囲まれた独立したURL
+            $pattern1 = '/<p>\s*(<a[^>]+>)?(https?:\/\/[^\s<>"]+?)(<\/a>)?\s*<\/p>/i';
+            $content = preg_replace_callback($pattern1, array($this, 'handle_url_in_p_tag'), $content);
+            
+            // パターン2: <p>タグ内のリンクタグで囲まれたURL
+            $pattern2 = '/<p>\s*<a[^>]+href=["\']([^"\']+)["\'][^>]*>\1<\/a>\s*<\/p>/i';
+            $content = preg_replace_callback($pattern2, array($this, 'handle_link_in_p_tag'), $content);
+        } else {
+            // 設定がOFFの場合: 他のブロック内にない<p>タグのみ処理
+            
+            // まず、ブロック内を一時的に保護
+            $protected_blocks = array();
+            $block_pattern = '/<(blockquote|div|section|aside|article)[^>]*>.*?<\/\1>/is';
+            
+            $content = preg_replace_callback($block_pattern, function($matches) use (&$protected_blocks) {
+                $placeholder = '<!--PROTECTED_BLOCK_' . count($protected_blocks) . '-->';
+                $protected_blocks[] = $matches[0];
+                return $placeholder;
+            }, $content);
+            
+            // 保護された後に残っているURLのみ処理
+            // パターン1: <p>タグで囲まれた独立したURL
+            $pattern1 = '/<p>\s*(<a[^>]+>)?(https?:\/\/[^\s<>"]+?)(<\/a>)?\s*<\/p>/i';
+            $content = preg_replace_callback($pattern1, array($this, 'handle_url_in_p_tag'), $content);
+            
+            // パターン2: <p>タグ内のリンクタグで囲まれたURL
+            $pattern2 = '/<p>\s*<a[^>]+href=["\']([^"\']+)["\'][^>]*>\1<\/a>\s*<\/p>/i';
+            $content = preg_replace_callback($pattern2, array($this, 'handle_link_in_p_tag'), $content);
+            
+            // 保護されたブロックを元に戻す
+            foreach ($protected_blocks as $index => $block) {
+                $content = str_replace('<!--PROTECTED_BLOCK_' . $index . '-->', $block, $content);
+            }
+        }
         
         // パターン3: 独立した行のURL
         $pattern3 = '/^[ \t]*(https?:\/\/[^\s<>"]+?)[ \t]*$/m';
@@ -380,6 +490,12 @@ class SmartUrlView {
      * 内部URLを処理
      */
     public function handle_internal_url($matches) {
+        // 設定を確認
+        $enable_internal = get_option('smart_url_view_enable_internal', '1');
+        if ($enable_internal !== '1') {
+            return $matches[0]; // 元のHTMLをそのまま返す
+        }
+        
         $url = $matches[1];
         return $this->internal_handler->create_blog_card($url);
     }
@@ -388,6 +504,12 @@ class SmartUrlView {
      * 外部URLを処理
      */
     public function handle_external_url($matches) {
+        // 設定を確認
+        $enable_external = get_option('smart_url_view_enable_external', '1');
+        if ($enable_external !== '1') {
+            return $matches[0]; // 元のHTMLをそのまま返す
+        }
+        
         $url = $matches[1];
         return $this->external_handler->create_blog_card($url);
     }
@@ -427,9 +549,21 @@ class SmartUrlView {
         $is_internal = (strpos($url, $site_url) === 0);
         
         if ($is_internal) {
+            // 設定を確認
+            $enable_internal = get_option('smart_url_view_enable_internal', '1');
+            if ($enable_internal !== '1') {
+                return $matches[0]; // 元のHTMLをそのまま返す
+            }
+            
             // 内部URLの場合
             return $this->internal_handler->create_blog_card($url);
         } else {
+            // 設定を確認
+            $enable_external = get_option('smart_url_view_enable_external', '1');
+            if ($enable_external !== '1') {
+                return $matches[0]; // 元のHTMLをそのまま返す
+            }
+            
             // 外部URLの場合
             return $this->external_handler->create_blog_card($url);
         }
